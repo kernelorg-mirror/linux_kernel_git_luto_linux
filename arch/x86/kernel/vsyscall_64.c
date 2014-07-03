@@ -280,6 +280,7 @@ do_ret:
 
 sigsegv:
 	force_sig(SIGSEGV, current);
+	regs->orig_ax = -1;  /* We're not in a fake syscall any more */
 	return true;
 }
 
