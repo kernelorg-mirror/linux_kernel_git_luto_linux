@@ -835,6 +835,80 @@ irq_return:
 
 ENTRY(native_iret)
 	/*
+	 * This implements "iret" the Platonic ideal, not "iret" the
+	 * instruction.  Specifically, it will pop RIP, CS, FLAGS,
+	 * RSP, and SS and load them, correctly, into the CPU state.
+	 * (IRET screws up RSP depending on SS).  It tries to avoid
+	 * serializing (IRET always serializes).
+	 *
+	 * Alas, this code may or may not enable NMIs.  Use with
+	 * caution.  (NB: this is currently buggy as a result.)
+	 */
+
+	/*
+	 * Only IRET can set RF correctly.  Re-enabling TF part-way
+	 * through the return process could get nasty, so force IRET
+	 * if we're setting TF, too.
+	 */
+	testl $(X86_EFLAGS_RF|X86_EFLAGS_TF), (EFLAGS-RIP)(%rsp)
+	jnz native_irq_return_need_iret
+
+	/*
+	 * While it's technically possible to be in userspace with IF
+	 * clear (using iopl(2)), it's so unlikely that there's no point
+	 * in optimizing it.
+	 */
+	testl $X86_EFLAGS_IF, (EFLAGS-RIP)(%rsp)
+	jz native_irq_return_need_iret
+
+	/*
+	 * Returning without IRET to kernel space is possible, but
+	 * the considerations are different and we're not ready for that
+	 * yet.
+	 */
+	testl $3, (CS-RIP)(%rsp)
+	jz native_irq_return_need_iret
+
+#ifdef CONFIG_X86_ESPFIX64
+	/* lretq has the same bug^Wfeature as iret wrt 16-bit SS. */
+	testb $4,(SS-RIP)(%rsp)
+	jnz native_irq_return_ldt
+#endif
+
+	/*
+	 * Rearrange the stack to pretend we got here via a call gate
+	 * (yes, really), and do a long return.
+	 */
+	pushq (SS     - RIP + 0*8)(%rsp)
+	pushq (RSP    - RIP + 1*8)(%rsp)
+	pushq (CS     - RIP + 2*8)(%rsp)
+	pushq (RIP    - RIP + 3*8)(%rsp)
+	pushq (EFLAGS - RIP + 4*8)(%rsp)
+	andl $~X86_EFLAGS_IF, (%rsp)	/* Clear saved IF. */
+	popfq				/* Restore all regs except IF. */
+
+.global native_sti_before_lretq_to_userspace
+native_sti_before_lretq_to_userspace:
+	sti				/* Restore IF. */
+
+	/*
+	 * This relies on the one-instruction interrupt grace period here
+	 * between sti and lretq.  A non-paranoid interrupt here will
+	 * explode because GS is wrong.  More subtly, we may be on an IST
+	 * stack, and if we enable interrupts before leaving the IST stack,
+	 * we could cause a recursive IST interrupt, which would blow away
+	 * our stack frame.
+	 *
+	 * NMI and MCE here are safe here -- see fixup_lret_nmi.
+	 */
+
+.global native_lretq_to_userspace
+native_lretq_to_userspace:
+	lretq
+	_ASM_EXTABLE(native_lretq_to_userspace, bad_lretq)
+
+native_irq_return_need_iret:
+	/*
 	 * Are we returning to a stack segment from the LDT?  Note: in
 	 * 64-bit mode SS:RSP on the exception stack is always valid.
 	 */
@@ -886,6 +960,24 @@ bad_iret:
 	 * so swap back.
 	 */
 	pushq $0
+
+	SWAPGS
+	jmp general_protection
+
+bad_lretq:
+	/*
+	 * The lretq traps when the %cs or %ss being restored is bogus.
+	 * We've lost the original trap vector and error code.
+	 * #GPF is the most likely one to get for an invalid selector.
+	 * So pretend we completed the iret and took the #GPF in user mode.
+	 *
+	 * We are now running with the kernel GS after exception recovery.
+	 * But error_entry expects us to have user GS to match the user %cs,
+	 * so swap back.
+	 */
+	cli		/* general_protection expects interrupts to be off. */
+	addq $4*8,%rsp	/* Pop the lretq frame. */
+	pushq $0	/* Error code 0. */
 
 	SWAPGS
 	jmp general_protection
@@ -1413,7 +1505,7 @@ error_sti:
 	ret
 
 /*
- * There are two places in the kernel that can potentially fault with
+ * There are three places in the kernel that can potentially fault with
  * usergs. Handle them here. The exception handlers after iret run with
  * kernel gs again, so don't set the user space flag. B stepping K8s
  * sometimes report an truncated RIP for IRET exceptions returning to
@@ -1428,6 +1520,8 @@ error_kernelspace:
 	cmpq %rax,RIP+8(%rsp)
 	je bstep_iret
 	cmpq $gs_change,RIP+8(%rsp)
+	je error_swapgs
+	cmpq $native_lretq_to_userspace,RIP+8(%rsp)
 	je error_swapgs
 	jmp error_sti
 
@@ -1707,7 +1801,7 @@ nmi_restore:
 
 	/* Clear the NMI executing stack variable */
 	movq $0, 5*8(%rsp)
-	jmp irq_return
+	INTERRUPT_RETURN_UNBLOCK_NMI
 	CFI_ENDPROC
 END(nmi)
 
