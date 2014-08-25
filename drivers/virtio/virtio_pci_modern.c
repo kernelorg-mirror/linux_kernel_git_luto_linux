@@ -345,6 +345,7 @@ static struct virtqueue *setup_vq(struct virtio_pci_device *vp_dev,
 
 	info->num = num;
 	info->msix_vector = msix_vec;
+	info->use_dma_api = false;	/* XXX: fix me! */
 
 	info->queue = alloc_virtqueue_pages(&info->num);
 	if (info->queue == NULL)

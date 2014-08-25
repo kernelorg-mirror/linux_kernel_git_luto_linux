@@ -38,8 +38,10 @@ struct virtio_pci_vq_info {
 	/* the number of entries in the queue */
 	int num;
 
-	/* the virtual address of the ring queue */
+	/* the ring queue */
 	void *queue;
+	dma_addr_t queue_dma_addr;      /* bus address */
+	bool use_dma_api;               /* are we using the DMA API? */
 
 	/* the list node for the virtqueues list */
 	struct list_head node;
@@ -148,6 +150,55 @@ const char *vp_bus_name(struct virtio_device *vdev);
  * - ignore the affinity request if we're using INTX
  */
 int vp_set_vq_affinity(struct virtqueue *vq, int cpu);
+
+static inline bool vp_use_dma_api(void)
+{
+	/*
+	 * Due to limitations of the DMA API, we only have two choices:
+	 * use the DMA API (e.g. set up IOMMU mappings or apply Xen's
+	 * physical-to-machine translation) or use direct physical
+	 * addressing.  Furthermore, there's no sensible way yet for the
+	 * PCI bus code to tell us whether we're supposed to act like a
+	 * normal PCI device (and use the DMA API) or to do something
+	 * else.  So we're stuck with heuristics here.
+	 *
+	 * In general, we would prefer to use the DMA API, since we
+	 * might be driving a physical device, and such devices *must*
+	 * use the DMA API if there is an IOMMU involved.
+	 *
+	 * On x86, there are no physically-mapped emulated virtio PCI
+	 * devices that live behind an IOMMU.  On ARM, there don't seem
+	 * to be any hypervisors that use virtio_pci (as opposed to
+	 * virtio_mmio) that also emulate an IOMMU.  So using the DMA
+	 * API is safe.
+	 *
+	 * XXX: due to the IMO ill-conceived addition of QEMU Q35 iommu
+	 * support that silently passes virtio through, this is all
+	 * screwed up.
+	 *
+	 * On PowerPC, it's the other way around.  There usually is an
+	 * IOMMU between us and the virtio PCI device, but the device is
+	 * probably emulated and ignores the IOMMU.  Unfortunately, we
+	 * can't tell whether we're talking to an emulated device or to
+	 * a physical device that really lives behind the IOMMU.  That
+	 * means that we're stuck with ignoring the DMA API.
+	 */
+
+#ifdef CONFIG_PPC
+	return false;
+#else
+	/*
+	 * Minor optimization: if the platform promises to have physical
+	 * PCI DMA, we turn off DMA mapping in virtio_ring.  If the
+	 * platform's DMA API implementation is well optimized, this
+	 * should have almost no effect, but we already have a branch in
+	 * the vring code, and we can avoid any further indirection with
+	 * very little effort.
+	 */
+	return !PCI_DMA_BUS_IS_PHYS;
+#endif
+}
+
 
 #if IS_ENABLED(CONFIG_VIRTIO_PCI_LEGACY)
 int virtio_pci_legacy_probe(struct virtio_pci_device *);
