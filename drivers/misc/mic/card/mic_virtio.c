@@ -260,7 +260,7 @@ static struct virtqueue *mic_find_vq(struct virtio_device *vdev,
 	mvdev->vr[index] = va;
 	memset_io(va, 0x0, _vr_size);
 	vq = vring_new_virtqueue(index, le16_to_cpu(config.num),
-				 MIC_VIRTIO_RING_ALIGN, vdev, false,
+				 MIC_VIRTIO_RING_ALIGN, vdev, false, false,
 				 (void __force *)va, mic_notify, callback,
 				 name);
 	if (!vq) {

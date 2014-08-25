@@ -146,7 +146,8 @@ static struct virtqueue *setup_vq(struct virtio_pci_device *vp_dev,
 	/* create the vring */
 	vq = vring_new_virtqueue(index, info->num,
 				 VIRTIO_PCI_VRING_ALIGN, &vp_dev->vdev,
-				 true, info->queue, vp_notify, callback, name);
+				 true, false,
+				 info->queue, vp_notify, callback, name);
 	if (!vq) {
 		err = -ENOMEM;
 		goto out_activate_queue;
