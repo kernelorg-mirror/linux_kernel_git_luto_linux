@@ -2705,8 +2705,12 @@ static inline void schedule_debug(struct task_struct *prev)
 	 * Test if we are atomic. Since do_exit() needs to call into
 	 * schedule() atomically, we ignore that path. Otherwise whine
 	 * if we are scheduling when we should not.
+	 *
+	 * If architectural conditions for scheduling are not met,
+	 * complain even if we are in do_exit.
 	 */
-	if (unlikely(in_atomic_preempt_off() && prev->state != TASK_DEAD))
+	if (unlikely((in_atomic_preempt_off() && prev->state != TASK_DEAD) ||
+		     !arch_schedule_allowed()))
 		__schedule_bug(prev);
 	rcu_sleep_check();
 
@@ -7200,10 +7204,12 @@ static inline int preempt_count_equals(int preempt_offset)
 void __might_sleep(const char *file, int line, int preempt_offset)
 {
 	static unsigned long prev_jiffy;	/* ratelimiting */
+	bool arch_ok;
 
 	rcu_sleep_check(); /* WARN_ON_ONCE() by default, no rate limit reqd. */
+	arch_ok = arch_schedule_allowed();
 	if ((preempt_count_equals(preempt_offset) && !irqs_disabled() &&
-	     !is_idle_task(current)) ||
+	     !is_idle_task(current) && arch_ok) ||
 	    system_state != SYSTEM_RUNNING || oops_in_progress)
 		return;
 	if (time_before(jiffies, prev_jiffy + HZ) && prev_jiffy)
@@ -7214,8 +7220,8 @@ void __might_sleep(const char *file, int line, int preempt_offset)
 		"BUG: sleeping function called from invalid context at %s:%d\n",
 			file, line);
 	printk(KERN_ERR
-		"in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
-			in_atomic(), irqs_disabled(),
+		"in_atomic(): %d, irqs_disabled(): %d, arch_schedule_allowed: %d, pid: %d, name: %s\n",
+			in_atomic(), irqs_disabled(), (int)arch_ok,
 			current->pid, current->comm);
 
 	debug_show_held_locks(current);

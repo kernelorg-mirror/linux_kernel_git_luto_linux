@@ -237,3 +237,6 @@ config ARCH_USE_QUEUE_RWLOCK
 config QUEUE_RWLOCK
 	def_bool y if ARCH_USE_QUEUE_RWLOCK
 	depends on SMP
+
+config HAVE_ARCH_SCHEDULE_ALLOWED
+       bool

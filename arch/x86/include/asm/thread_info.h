@@ -170,6 +170,23 @@ static inline struct thread_info *current_thread_info(void)
 	return ti;
 }
 
+static inline unsigned long current_stack_pointer(void)
+{
+	unsigned long sp;
+#ifdef CONFIG_X86_64
+	asm("mov %%rsp,%0" : "=g" (sp));
+#else
+	asm("mov %%esp,%0" : "=g" (sp));
+#endif
+	return sp;
+}
+
+static inline bool arch_schedule_allowed(void)
+{
+	return ((current_stack_pointer() ^ this_cpu_read_stable(kernel_stack))
+		& ~(THREAD_SIZE - 1)) == 0;
+}
+
 #else /* !__ASSEMBLY__ */
 
 /* how to get the thread information struct from ASM */
