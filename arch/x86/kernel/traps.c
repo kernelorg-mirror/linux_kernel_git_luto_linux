@@ -373,6 +373,7 @@ NOKPROBE_SYMBOL(do_general_protection);
 dotraplinkage void notrace do_int3(struct pt_regs *regs, long error_code)
 {
 	enum ctx_state prev_state;
+	extern unsigned char fake_int3[];
 
 #ifdef CONFIG_DYNAMIC_FTRACE
 	/*
@@ -387,6 +388,10 @@ dotraplinkage void notrace do_int3(struct pt_regs *regs, long error_code)
 		return;
 
 	prev_state = ist_enter(regs);
+
+	if (!user_mode_vm(regs) && regs->ip == (unsigned long)fake_int3)
+		goto exit;
+
 #ifdef CONFIG_KGDB_LOW_LEVEL_TRAP
 	if (kgdb_ll_trap(DIE_INT3, "int3", regs, error_code, X86_TRAP_BP,
 				SIGTRAP) == NOTIFY_STOP)
