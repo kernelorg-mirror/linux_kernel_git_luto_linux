@@ -1193,9 +1193,11 @@ void syscall_init(void)
 	 * This does not cause SYSENTER to jump to the wrong location, because
 	 * AMD doesn't allow SYSENTER in long mode (either 32- or 64-bit).
 	 */
-	wrmsrl_safe(MSR_IA32_SYSENTER_CS, (u64)__KERNEL_CS);
-	wrmsrl_safe(MSR_IA32_SYSENTER_ESP, 0ULL);
-	wrmsrl_safe(MSR_IA32_SYSENTER_EIP, (u64)entry_SYSENTER_compat);
+	wrmsrl_safe(MSR_IA32_SYSENTER_CS, __KERNEL_CS);
+	wrmsrl_safe(MSR_IA32_SYSENTER_ESP,
+		    (unsigned long)&per_cpu(cpu_tss, smp_processor_id()) +
+		    offsetofend(struct tss_struct, SYSENTER_stack));
+	wrmsrl_safe(MSR_IA32_SYSENTER_EIP, (unsigned long)entry_SYSENTER_compat);
 #else
 	wrmsrl(MSR_CSTAR, ignore_sysret);
 	wrmsrl_safe(MSR_IA32_SYSENTER_CS, (u64)GDT_ENTRY_INVALID_SEG);
