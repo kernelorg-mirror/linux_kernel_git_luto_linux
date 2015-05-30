@@ -1001,15 +1001,13 @@ void enable_sep_cpu(void)
 	 * We cache MSR_IA32_SYSENTER_CS's value in the TSS's ss1 field --
 	 * see the big comment in struct x86_hw_tss's definition.
 	 */
-
 	tss->x86_tss.ss1 = __KERNEL_CS;
-	wrmsr(MSR_IA32_SYSENTER_CS, tss->x86_tss.ss1, 0);
 
-	wrmsr(MSR_IA32_SYSENTER_ESP,
-	      (unsigned long)tss + offsetofend(struct tss_struct, SYSENTER_stack),
-	      0);
-
-	wrmsr(MSR_IA32_SYSENTER_EIP, (unsigned long)entry_SYSENTER_32, 0);
+	wrmsrl_safe(MSR_IA32_SYSENTER_CS, __KERNEL_CS);
+	wrmsrl_safe(MSR_IA32_SYSENTER_ESP,
+		    (unsigned long)tss +
+		    offsetofend(struct tss_struct, SYSENTER_stack));
+	wrmsrl_safe(MSR_IA32_SYSENTER_EIP, (unsigned long)entry_SYSENTER_32);
 
 out:
 	put_cpu();
