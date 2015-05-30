@@ -982,10 +982,9 @@ static void identify_cpu(struct cpuinfo_x86 *c)
 }
 
 /*
- * Set up the CPU state needed to execute SYSENTER/SYSEXIT instructions
- * on 32-bit kernels:
+ * Set up the CPU state needed to execute SYSENTER/SYSEXIT instructions:
  */
-#ifdef CONFIG_X86_32
+#if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
 void enable_sep_cpu(void)
 {
 	struct tss_struct *tss;
@@ -994,20 +993,35 @@ void enable_sep_cpu(void)
 	cpu = get_cpu();
 	tss = &per_cpu(cpu_tss, cpu);
 
-	if (!boot_cpu_has(X86_FEATURE_SEP))
+	/*
+	 * On 64-bit CPUs, enable SEP unconditionally.  On Intel CPUs,
+	 * it works and we use it.  On AMD CPUs, the MSRs exist but EIP
+	 * is truncated to 32 bits.  This doesn't matter because AMD
+	 * CPUs disallow SYSENTER in long mode.  If AMD ever decides to
+	 * support SYSENTER, then they'll have to fix the truncation
+	 * issue, and this code will work as-is.
+	 */
+
+	if (IS_ENABLED(CONFIG_X86_32) && !boot_cpu_has(X86_FEATURE_SEP))
 		goto out;
 
+#ifdef CONFIG_X86_32
 	/*
 	 * We cache MSR_IA32_SYSENTER_CS's value in the TSS's ss1 field --
 	 * see the big comment in struct x86_hw_tss's definition.
 	 */
 	tss->x86_tss.ss1 = __KERNEL_CS;
+#endif
 
 	wrmsrl_safe(MSR_IA32_SYSENTER_CS, __KERNEL_CS);
 	wrmsrl_safe(MSR_IA32_SYSENTER_ESP,
 		    (unsigned long)tss +
 		    offsetofend(struct tss_struct, SYSENTER_stack));
+#ifdef CONFIG_X86_32
 	wrmsrl_safe(MSR_IA32_SYSENTER_EIP, (unsigned long)entry_SYSENTER_32);
+#else
+	wrmsrl_safe(MSR_IA32_SYSENTER_EIP, (unsigned long)entry_SYSENTER_compat);
+#endif
 
 out:
 	put_cpu();
@@ -1187,17 +1201,7 @@ void syscall_init(void)
 
 #ifdef CONFIG_IA32_EMULATION
 	wrmsrl(MSR_CSTAR, entry_SYSCALL_compat);
-	/*
-	 * This only works on Intel CPUs.
-	 * On AMD CPUs these MSRs are 32-bit, CPU truncates MSR_IA32_SYSENTER_EIP.
-	 * This does not cause SYSENTER to jump to the wrong location, because
-	 * AMD doesn't allow SYSENTER in long mode (either 32- or 64-bit).
-	 */
-	wrmsrl_safe(MSR_IA32_SYSENTER_CS, __KERNEL_CS);
-	wrmsrl_safe(MSR_IA32_SYSENTER_ESP,
-		    (unsigned long)&per_cpu(cpu_tss, smp_processor_id()) +
-		    offsetofend(struct tss_struct, SYSENTER_stack));
-	wrmsrl_safe(MSR_IA32_SYSENTER_EIP, (unsigned long)entry_SYSENTER_compat);
+	enable_sep_cpu();
 #else
 	wrmsrl(MSR_CSTAR, ignore_sysret);
 	wrmsrl_safe(MSR_IA32_SYSENTER_CS, (u64)GDT_ENTRY_INVALID_SEG);
