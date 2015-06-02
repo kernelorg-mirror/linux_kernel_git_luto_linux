@@ -298,10 +298,12 @@ struct tss_struct {
 	 */
 	unsigned long		io_bitmap[IO_BITMAP_LONGS + 1];
 
+#if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
 	/*
 	 * Space for the temporary SYSENTER stack:
 	 */
 	unsigned long		SYSENTER_stack[64];
+#endif
 
 } ____cacheline_aligned;
 
