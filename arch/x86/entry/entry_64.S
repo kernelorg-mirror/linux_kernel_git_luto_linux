@@ -1145,9 +1145,14 @@ ENTRY(error_entry)
 	testb	$3, CS+8(%rsp)
 	jz	error_kernelspace
 
-	/* We entered from user mode */
+error_entry_from_usermode_swapgs:
+	/*
+	 * We entered from user mode or we're pretending to have entered
+	 * from user mode due to an IRET fault.
+	 */
 	SWAPGS
 
+error_entry_from_usermode_after_swapgs:
 error_entry_done:
 	TRACE_IRQS_OFF
 	ret
@@ -1174,8 +1179,7 @@ error_kernelspace:
 	 * gsbase and proceed.  We'll fix up the exception and land in
 	 * gs_change's error handler with kernel gsbase.
 	 */
-	SWAPGS
-	jmp	error_entry_done
+	jmp	error_entry_from_usermode_swapgs
 
 bstep_iret:
 	/* Fix truncated RIP */
@@ -1198,7 +1202,7 @@ error_bad_iret:
 	call	fixup_bad_iret
 	mov	%rax, %rsp
 	decl	%ebx
-	jmp	error_entry_done
+	jmp	error_entry_from_usermode_after_swapgs
 END(error_entry)
 
 
