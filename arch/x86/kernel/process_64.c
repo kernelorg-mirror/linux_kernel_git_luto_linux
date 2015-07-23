@@ -280,6 +280,12 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	unsigned fsindex, gsindex;
 	fpu_switch_t fpu_switch;
 
+#ifdef CONFIG_DEBUG_ENTRY
+	/* Warn if we're on the IRQ stack. */
+	WARN_ON_ONCE(this_cpu_read(irq_stack_flag) !=
+		     this_cpu_read(irq_stack_ptr));
+#endif
+
 	fpu_switch = switch_fpu_prepare(prev_fpu, next_fpu, cpu);
 
 	/* We must save %fs and %gs before load_TLS() because

@@ -491,6 +491,89 @@ ENTRY(irq_entries_start)
 END(irq_entries_start)
 
 /*
+ * Enters the IRQ stack if we're not already using it.  NMI-safe.  Clobbers
+ * flags and puts old RSP into old_rsp, and leaves all other GPRs alone.
+ * Requires kernel GSBASE.
+ *
+ * The invariant is that, if irq_stack_flag != irq_stack_ptr, then
+ * the IRQ stack is in use and we're either on the IRQ stack or in an
+ * IST interrupt nested inside the IRQ stack.  Otherwise
+ * irq_stack_flag == irq_stack_ptr and the IRQ stack is free.
+ *
+ * This is safe as long as the current stack is valid.  It survives
+ * arbitrarily nested interrupts as long as no nested interrupt changes
+ * the IRQ stack state without putting it back before returning.
+ */
+.macro ENTER_IRQ_STACK old_rsp
+	movq	PER_CPU_VAR(irq_stack_ptr), \old_rsp
+	cmpq	\old_rsp, PER_CPU_VAR(irq_stack_flag)
+	movq	%rsp, \old_rsp
+	jne	694f
+
+	/*
+	 * IRQ stack is free; switch to it.  %rsp != 0, so adding %rsp to
+	 * irq_stack_flag will change it so that irq_stack_flag becomes
+	 * nonequal to irq_stack_ptr.  Since irq_stack_flag is currently
+	 * equal to irq_stack_ptr, moving irq_stack_flag to %rsp will
+	 * put us on the IRQ stack.  Conveniently, we can do both of these
+	 * at once.
+	 */
+	xaddq	%rsp, PER_CPU_VAR(irq_stack_flag)
+
+	pushq	\old_rsp	/* Save old rsp */
+	jmp 695f
+
+694:
+	/* We're already on the IRQ stack.  Push 0 to record that fact. */
+	pushq	$0
+
+695:
+.endm
+
+/*
+ * Undoes ENTER_IRQ_STACK
+ */
+.macro LEAVE_IRQ_STACK_CLOBBER_R11
+#ifdef CONFIG_DEBUG_ENTRY
+	/* Sanity check: Make sure irq_stack_flag != irq_stack_ptr */
+	movq	PER_CPU_VAR(irq_stack_flag), %r11
+	cmpq	%r11, PER_CPU_VAR(irq_stack_ptr)
+	jne	696f
+	ud2
+696:
+#endif
+
+	/* Are we the last frame on the IRQ stack? */
+	popq	%r11
+	test	%r11, %r11
+	jz	697f
+
+	/* Yes: we just popped the last byte on the IRQ stack. */
+#ifdef CONFIG_DEBUG_ENTRY
+	/* Sanity check: we had better have the right RSP. */
+	cmpq	%rsp, PER_CPU_VAR(irq_stack_ptr)
+	je	698f
+	ud2
+698:
+#endif
+
+	/* %r11 points to the old rsp; switch back atomically */
+	movq	%r11, PER_CPU_VAR(irq_stack_flag)
+	xchg	%rsp, PER_CPU_VAR(irq_stack_flag)
+
+#ifdef CONFIG_DEBUG_ENTRY
+	/* Sanity check: Make sure irq_stack_flag == irq_stack_ptr */
+	movq	PER_CPU_VAR(irq_stack_flag), %r11
+	cmpq	%r11, PER_CPU_VAR(irq_stack_ptr)
+	je	699f
+	ud2
+699:
+#endif
+
+697:
+.endm
+
+/*
  * Interrupt entry/exit.
  *
  * Interrupt entry points save only callee clobbered registers in fast path.
@@ -518,17 +601,7 @@ END(irq_entries_start)
 #endif
 
 1:
-	/*
-	 * Save previous stack pointer, optionally switch to interrupt stack.
-	 * irq_count is used to check if a CPU is already on an interrupt stack
-	 * or not. While this is essentially redundant with preempt_count it is
-	 * a little cheaper to use a separate counter in the PDA (short of
-	 * moving irq_enter into assembly, which would be too much work)
-	 */
-	movq	%rsp, %rdi
-	incl	PER_CPU_VAR(irq_count)
-	cmovzq	PER_CPU_VAR(irq_stack_ptr), %rsp
-	pushq	%rdi
+	ENTER_IRQ_STACK old_rsp=%rdi
 	/* We entered an interrupt context - irqs are off: */
 	TRACE_IRQS_OFF
 
@@ -548,10 +621,8 @@ common_interrupt:
 ret_from_intr:
 	DISABLE_INTERRUPTS(CLBR_NONE)
 	TRACE_IRQS_OFF
-	decl	PER_CPU_VAR(irq_count)
 
-	/* Restore saved previous stack */
-	popq	%rsp
+	LEAVE_IRQ_STACK_CLOBBER_R11
 
 	testb	$3, CS(%rsp)
 	jz	retint_kernel
@@ -768,6 +839,10 @@ ENTRY(\sym)
 
 	call	\do_sym
 
+	.if \irqstack
+	LEAVE_IRQ_STACK_CLOBBER_R11
+	.endif
+
 	.if \shift_ist != -1
 	addq	$EXCEPTION_STKSZ, CPU_TSS_IST(\shift_ist)
 	.endif
@@ -863,14 +938,9 @@ bad_gs:
 
 /* Call softirq on interrupt stack. Interrupts are off. */
 ENTRY(do_softirq_own_stack)
-	pushq	%rbp
-	mov	%rsp, %rbp
-	incl	PER_CPU_VAR(irq_count)
-	cmove	PER_CPU_VAR(irq_stack_ptr), %rsp
-	push	%rbp				/* frame pointer backlink */
+	ENTER_IRQ_STACK old_rsp=%r11
 	call	__do_softirq
-	leaveq
-	decl	PER_CPU_VAR(irq_count)
+	LEAVE_IRQ_STACK_CLOBBER_R11
 	ret
 END(do_softirq_own_stack)
 
@@ -889,25 +959,21 @@ idtentry xen_hypervisor_callback xen_do_hypervisor_callback has_error_code=0
  * So, on entry to the handler we detect whether we interrupted an
  * existing activation in its critical region -- if so, we pop the current
  * activation and restart the handler using the previous one.
+ *
+ * XXX: I have no idea what this comment is talking about.  --luto
  */
 ENTRY(xen_do_hypervisor_callback)		/* do_hypervisor_callback(struct *pt_regs) */
-
+	ENTER_IRQ_STACK old_rsp=%r11
 /*
  * Since we don't modify %rdi, evtchn_do_upall(struct *pt_regs) will
  * see the correct pointer to the pt_regs
  */
-	movq	%rdi, %rsp			/* we don't return, adjust the stack frame */
-11:	incl	PER_CPU_VAR(irq_count)
-	movq	%rsp, %rbp
-	cmovzq	PER_CPU_VAR(irq_stack_ptr), %rsp
-	pushq	%rbp				/* frame pointer backlink */
 	call	xen_evtchn_do_upcall
-	popq	%rsp
-	decl	PER_CPU_VAR(irq_count)
+	LEAVE_IRQ_STACK_CLOBBER_R11
 #ifndef CONFIG_PREEMPT
 	call	xen_maybe_preempt_hcall
 #endif
-	jmp	error_exit
+	ret
 END(xen_do_hypervisor_callback)
 
 /*

@@ -339,8 +339,14 @@ union irq_stack_union {
 DECLARE_PER_CPU_FIRST(union irq_stack_union, irq_stack_union) __visible;
 DECLARE_INIT_PER_CPU(irq_stack_union);
 
+/*
+ * irq_stack_ptr points to the IRQ stack.  irq_stack_flag == irq_stack_ptr
+ * if the CPU isn't on the IRQ stack and irq_stack_flag != irq_stack_ptr if
+ * the CPU is on the IRQ stack.
+ */
 DECLARE_PER_CPU(char *, irq_stack_ptr);
-DECLARE_PER_CPU(unsigned int, irq_count);
+DECLARE_PER_CPU(char *, irq_stack_flag);
+
 extern asmlinkage void ignore_sysret(void);
 #else	/* X86_64 */
 #ifdef CONFIG_CC_STACKPROTECTOR
