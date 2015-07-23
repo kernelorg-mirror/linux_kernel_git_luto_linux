@@ -280,6 +280,10 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	unsigned fsindex, gsindex;
 	fpu_switch_t fpu_switch;
 
+#ifdef CONFIG_DEBUG_ENTRY
+	WARN_ON_ONCE(this_cpu_read(irq_count) != -1);
+#endif
+
 	fpu_switch = switch_fpu_prepare(prev_fpu, next_fpu, cpu);
 
 	/* We must save %fs and %gs before load_TLS() because
