@@ -1005,14 +1005,6 @@ void enable_sep_cpu(void)
 	if (IS_ENABLED(CONFIG_X86_32) && !boot_cpu_has(X86_FEATURE_SEP))
 		goto out;
 
-#ifdef CONFIG_X86_32
-	/*
-	 * We cache MSR_IA32_SYSENTER_CS's value in the TSS's ss1 field --
-	 * see the big comment in struct x86_hw_tss's definition.
-	 */
-	tss->x86_tss.ss1 = __KERNEL_CS;
-#endif
-
 	wrmsrl_safe(MSR_IA32_SYSENTER_CS, __KERNEL_CS);
 	wrmsrl_safe(MSR_IA32_SYSENTER_ESP,
 		    (unsigned long)tss +
