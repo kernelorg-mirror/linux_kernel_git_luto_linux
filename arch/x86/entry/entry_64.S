@@ -893,13 +893,17 @@ apicinterrupt IRQ_WORK_VECTOR			irq_work_interrupt		smp_irq_work_interrupt
  */
 #define CPU_TSS_IST(x) PER_CPU_VAR(cpu_tss_rw) + (TSS_ist + ((x) - 1) * 8)
 
-.macro idtentry sym do_sym has_error_code:req paranoid=0 shift_ist=-1
+.macro idtentry sym do_sym has_error_code:req irqstack=0 paranoid=0 shift_ist=-1
 ENTRY(\sym)
 	UNWIND_HINT_IRET_REGS offset=\has_error_code*8
 
 	/* Sanity check */
 	.if \shift_ist != -1 && \paranoid == 0
 	.error "using shift_ist requires paranoid=1"
+	.endif
+
+	.if \irqstack && \paranoid
+	.error "using irqstack requires !paranoid"
 	.endif
 
 	ASM_CLAC
@@ -942,7 +946,15 @@ ENTRY(\sym)
 	subq	$EXCEPTION_STKSZ, CPU_TSS_IST(\shift_ist)
 	.endif
 
+	.if \irqstack
+	ENTER_IRQ_STACK old_rsp=%r10
+	.endif
+
 	call	\do_sym
+
+	.if \irqstack
+	LEAVE_IRQ_STACK
+	.endif
 
 	.if \shift_ist != -1
 	addq	$EXCEPTION_STKSZ, CPU_TSS_IST(\shift_ist)
