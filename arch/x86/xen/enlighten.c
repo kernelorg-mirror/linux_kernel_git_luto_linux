@@ -32,6 +32,7 @@
 #include <linux/gfp.h>
 #include <linux/memblock.h>
 #include <linux/edd.h>
+#include <linux/vmalloc.h>
 
 #include <xen/xen.h>
 #include <xen/events.h>
@@ -512,12 +513,23 @@ static void xen_alloc_ldt(struct desc_struct *ldt, unsigned entries)
 
 	for(i = 0; i < entries; i += entries_per_page)
 		set_aliased_prot(ldt + i, PAGE_KERNEL_RO);
+
+	/* If there are stray aliases, the LDT won't work. */
+	if (is_vmalloc_addr(ldt))
+		vm_unmap_aliases();
 }
 
 static void xen_free_ldt(struct desc_struct *ldt, unsigned entries)
 {
 	const unsigned entries_per_page = PAGE_SIZE / LDT_ENTRY_SIZE;
 	int i;
+
+	/*
+	 * The set_aliased_prot call may OOPS due to a hypercall failure
+	 * if there are any lazy vmap aliases of the page.  We don't
+	 * need to call vm_unmap_aliases() here, though, because we
+	 * already eliminated any aliases in xen_alloc_ldt.
+	 */
 
 	for(i = 0; i < entries; i += entries_per_page)
 		set_aliased_prot(ldt + i, PAGE_KERNEL);
