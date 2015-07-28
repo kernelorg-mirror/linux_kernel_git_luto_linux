@@ -345,6 +345,7 @@ static struct virtqueue *setup_vq(struct virtio_pci_device *vp_dev,
 
 	info->num = num;
 	info->msix_vector = msix_vec;
+	info->use_dma_api = false;	/* XXX: fix me! */
 
 	info->queue = alloc_virtqueue_pages(&info->num);
 	if (info->queue == NULL)
@@ -353,7 +354,8 @@ static struct virtqueue *setup_vq(struct virtio_pci_device *vp_dev,
 	/* create the vring */
 	vq = vring_new_virtqueue(index, info->num,
 				 SMP_CACHE_BYTES, &vp_dev->vdev,
-				 true, info->queue, vp_notify, callback, name);
+				 true, false,
+				 info->queue, vp_notify, callback, name);
 	if (!vq) {
 		err = -ENOMEM;
 		goto err_new_queue;

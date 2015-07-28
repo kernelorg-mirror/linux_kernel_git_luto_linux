@@ -133,20 +133,30 @@ static struct virtqueue *setup_vq(struct virtio_pci_device *vp_dev,
 
 	info->num = num;
 	info->msix_vector = msix_vec;
+	info->use_dma_api = vp_use_dma_api();
 
 	size = PAGE_ALIGN(vring_size(num, VIRTIO_PCI_VRING_ALIGN));
-	info->queue = alloc_pages_exact(size, GFP_KERNEL|__GFP_ZERO);
+	if (info->use_dma_api) {
+		info->queue = dma_zalloc_coherent(&vp_dev->pci_dev->dev, size,
+						  &info->queue_dma_addr,
+						  GFP_KERNEL);
+	} else {
+		info->queue = alloc_pages_exact(PAGE_ALIGN(size),
+						GFP_KERNEL|__GFP_ZERO);
+		info->queue_dma_addr = virt_to_phys(info->queue);
+	}
 	if (info->queue == NULL)
 		return ERR_PTR(-ENOMEM);
 
 	/* activate the queue */
-	iowrite32(virt_to_phys(info->queue) >> VIRTIO_PCI_QUEUE_ADDR_SHIFT,
+	iowrite32(info->queue_dma_addr >> VIRTIO_PCI_QUEUE_ADDR_SHIFT,
 		  vp_dev->ioaddr + VIRTIO_PCI_QUEUE_PFN);
 
 	/* create the vring */
 	vq = vring_new_virtqueue(index, info->num,
 				 VIRTIO_PCI_VRING_ALIGN, &vp_dev->vdev,
-				 true, info->queue, vp_notify, callback, name);
+				 true, info->use_dma_api,
+				 info->queue, vp_notify, callback, name);
 	if (!vq) {
 		err = -ENOMEM;
 		goto out_activate_queue;
@@ -169,8 +179,12 @@ out_assign:
 	vring_del_virtqueue(vq);
 out_activate_queue:
 	iowrite32(0, vp_dev->ioaddr + VIRTIO_PCI_QUEUE_PFN);
-	free_pages_exact(info->queue, size);
-	return ERR_PTR(err);
+	if (info->use_dma_api) {
+		dma_free_coherent(&vp_dev->pci_dev->dev, size,
+				  info->queue, info->queue_dma_addr);
+	} else {
+		free_pages_exact(info->queue, PAGE_ALIGN(size));
+	}	return ERR_PTR(err);
 }
 
 static void del_vq(struct virtio_pci_vq_info *info)
@@ -194,7 +208,12 @@ static void del_vq(struct virtio_pci_vq_info *info)
 	iowrite32(0, vp_dev->ioaddr + VIRTIO_PCI_QUEUE_PFN);
 
 	size = PAGE_ALIGN(vring_size(info->num, VIRTIO_PCI_VRING_ALIGN));
-	free_pages_exact(info->queue, size);
+	if (info->use_dma_api) {
+		dma_free_coherent(&vp_dev->pci_dev->dev, size,
+				  info->queue, info->queue_dma_addr);
+	} else {
+		free_pages_exact(info->queue, PAGE_ALIGN(size));
+	}
 }
 
 static const struct virtio_config_ops virtio_pci_config_ops = {
@@ -226,6 +245,13 @@ int virtio_pci_legacy_probe(struct virtio_pci_device *vp_dev)
 		       VIRTIO_PCI_ABI_VERSION, pci_dev->revision);
 		return -ENODEV;
 	}
+
+	rc = dma_set_mask_and_coherent(&pci_dev->dev, DMA_BIT_MASK(64));
+	if (rc)
+		rc = dma_set_mask_and_coherent(&pci_dev->dev,
+						DMA_BIT_MASK(32));
+	if (rc)
+		dev_warn(&pci_dev->dev, "Failed to enable 64-bit or 32-bit DMA.  Trying to continue, but this might not work.\n");
 
 	rc = pci_request_region(pci_dev, 0, "virtio-pci-legacy");
 	if (rc)

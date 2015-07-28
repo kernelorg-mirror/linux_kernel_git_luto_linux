@@ -976,31 +976,43 @@ static bool virtnet_send_command(struct virtnet_info *vi, u8 class, u8 cmd,
 				 struct scatterlist *out)
 {
 	struct scatterlist *sgs[4], hdr, stat;
-	struct virtio_net_ctrl_hdr ctrl;
-	virtio_net_ctrl_ack status = ~0;
+
+	struct {
+		struct virtio_net_ctrl_hdr ctrl;
+		virtio_net_ctrl_ack status;
+	} *buf;
+
 	unsigned out_num = 0, tmp;
+	bool ret;
 
 	/* Caller should know better */
 	BUG_ON(!virtio_has_feature(vi->vdev, VIRTIO_NET_F_CTRL_VQ));
 
-	ctrl.class = class;
-	ctrl.cmd = cmd;
+	buf = kmalloc(sizeof(*buf), GFP_ATOMIC);
+	if (!buf)
+		return false;
+	buf->status = ~0;
+
+	buf->ctrl.class = class;
+	buf->ctrl.cmd = cmd;
 	/* Add header */
-	sg_init_one(&hdr, &ctrl, sizeof(ctrl));
+	sg_init_one(&hdr, &buf->ctrl, sizeof(buf->ctrl));
 	sgs[out_num++] = &hdr;
 
 	if (out)
 		sgs[out_num++] = out;
 
 	/* Add return status. */
-	sg_init_one(&stat, &status, sizeof(status));
+	sg_init_one(&stat, &buf->status, sizeof(buf->status));
 	sgs[out_num] = &stat;
 
 	BUG_ON(out_num + 1 > ARRAY_SIZE(sgs));
 	virtqueue_add_sgs(vi->cvq, sgs, out_num, 1, vi, GFP_ATOMIC);
 
-	if (unlikely(!virtqueue_kick(vi->cvq)))
-		return status == VIRTIO_NET_OK;
+	if (unlikely(!virtqueue_kick(vi->cvq))) {
+		ret = (buf->status == VIRTIO_NET_OK);
+		goto out;
+	}
 
 	/* Spin for a response, the kick causes an ioport write, trapping
 	 * into the hypervisor, so the request should be handled immediately.
@@ -1009,7 +1021,11 @@ static bool virtnet_send_command(struct virtnet_info *vi, u8 class, u8 cmd,
 	       !virtqueue_is_broken(vi->cvq))
 		cpu_relax();
 
-	return status == VIRTIO_NET_OK;
+	ret = (buf->status == VIRTIO_NET_OK);
+
+out:
+	kfree(buf);
+	return ret;
 }
 
 static int virtnet_set_mac_address(struct net_device *dev, void *p)
@@ -1151,7 +1167,7 @@ static void virtnet_set_rx_mode(struct net_device *dev)
 {
 	struct virtnet_info *vi = netdev_priv(dev);
 	struct scatterlist sg[2];
-	u8 promisc, allmulti;
+	u8 *cmdbyte;
 	struct virtio_net_ctrl_mac *mac_data;
 	struct netdev_hw_addr *ha;
 	int uc_count;
@@ -1163,22 +1179,25 @@ static void virtnet_set_rx_mode(struct net_device *dev)
 	if (!virtio_has_feature(vi->vdev, VIRTIO_NET_F_CTRL_RX))
 		return;
 
-	promisc = ((dev->flags & IFF_PROMISC) != 0);
-	allmulti = ((dev->flags & IFF_ALLMULTI) != 0);
+	cmdbyte = kmalloc(sizeof(*cmdbyte), GFP_ATOMIC);
+	if (!cmdbyte)
+		return;
 
-	sg_init_one(sg, &promisc, sizeof(promisc));
+	sg_init_one(sg, cmdbyte, sizeof(*cmdbyte));
 
+	*cmdbyte = ((dev->flags & IFF_PROMISC) != 0);
 	if (!virtnet_send_command(vi, VIRTIO_NET_CTRL_RX,
 				  VIRTIO_NET_CTRL_RX_PROMISC, sg))
 		dev_warn(&dev->dev, "Failed to %sable promisc mode.\n",
-			 promisc ? "en" : "dis");
+			 *cmdbyte ? "en" : "dis");
 
-	sg_init_one(sg, &allmulti, sizeof(allmulti));
-
+	*cmdbyte = ((dev->flags & IFF_ALLMULTI) != 0);
 	if (!virtnet_send_command(vi, VIRTIO_NET_CTRL_RX,
 				  VIRTIO_NET_CTRL_RX_ALLMULTI, sg))
 		dev_warn(&dev->dev, "Failed to %sable allmulti mode.\n",
-			 allmulti ? "en" : "dis");
+			 *cmdbyte ? "en" : "dis");
+
+	kfree(cmdbyte);
 
 	uc_count = netdev_uc_count(dev);
 	mc_count = netdev_mc_count(dev);
@@ -1828,7 +1847,8 @@ static int virtnet_probe(struct virtio_device *vdev)
 	else
 		vi->hdr_len = sizeof(struct virtio_net_hdr);
 
-	if (virtio_has_feature(vdev, VIRTIO_F_ANY_LAYOUT))
+	if (virtio_has_feature(vdev, VIRTIO_F_ANY_LAYOUT) ||
+	    virtio_has_feature(vdev, VIRTIO_F_VERSION_1))
 		vi->any_header_sg = true;
 
 	if (virtio_has_feature(vdev, VIRTIO_NET_F_CTRL_VQ))
