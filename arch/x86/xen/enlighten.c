@@ -515,8 +515,10 @@ static void xen_alloc_ldt(struct desc_struct *ldt, unsigned entries)
 		set_aliased_prot(ldt + i, PAGE_KERNEL_RO);
 
 	/* If there are stray aliases, the LDT won't work. */
+	/*
 	if (is_vmalloc_addr(ldt))
 		vm_unmap_aliases();
+	*/
 }
 
 static void xen_free_ldt(struct desc_struct *ldt, unsigned entries)
@@ -539,6 +541,8 @@ static void xen_set_ldt(const void *addr, unsigned entries)
 {
 	struct mmuext_op *op;
 	struct multicall_space mcs = xen_mc_entry(sizeof(*op));
+	int i;
+	u32 tmp;
 
 	trace_xen_cpu_set_ldt(addr, entries);
 
@@ -550,6 +554,10 @@ static void xen_set_ldt(const void *addr, unsigned entries)
 	MULTI_mmuext_op(mcs.mc, op, 1, NULL, DOMID_SELF);
 
 	xen_mc_issue(PARAVIRT_LAZY_CPU);
+
+	/* Make sure it worked. */
+	for (i = 0; i < entries; i += 512)
+		asm volatile ("lsl %1, %0" : "=r" (tmp) : "r" ((i << 3) | 0x7));
 }
 
 static void xen_load_gdt(const struct desc_ptr *dtr)
