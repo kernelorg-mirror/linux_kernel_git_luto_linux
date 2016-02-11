@@ -292,12 +292,30 @@ DO_ERROR(X86_TRAP_NP,     SIGBUS,  "segment not present",	segment_not_present)
 DO_ERROR(X86_TRAP_SS,     SIGBUS,  "stack segment",		stack_segment)
 DO_ERROR(X86_TRAP_AC,     SIGBUS,  "alignment check",		alignment_check)
 
+#ifdef CONFIG_VMAP_STACK
+static void __noreturn handle_stack_overflow(const char *message,
+					     struct pt_regs *regs,
+					     unsigned long fault_address)
+{
+	printk(KERN_EMERG "BUG: stack guard page was hit at %p (stack is %p..%p)\n",
+		 (void *)fault_address, current->stack,
+		 (char *)current->stack + THREAD_SIZE - 1);
+	die(message, regs, 0);
+
+	/* Be absolutely certain we don't return. */
+	panic(message);
+}
+#endif
+
 #ifdef CONFIG_X86_64
 /* Runs on IST stack */
 dotraplinkage void do_double_fault(struct pt_regs *regs, long error_code)
 {
 	static const char str[] = "double fault";
 	struct task_struct *tsk = current;
+#ifdef CONFIG_VMAP_STACK
+	unsigned long cr2;
+#endif
 
 #ifdef CONFIG_X86_ESPFIX64
 	extern unsigned char native_irq_return_iret[];
@@ -331,6 +349,20 @@ dotraplinkage void do_double_fault(struct pt_regs *regs, long error_code)
 
 	tsk->thread.error_code = error_code;
 	tsk->thread.trap_nr = X86_TRAP_DF;
+
+#ifdef CONFIG_VMAP_STACK
+	/*
+	 * If we overflow the stack into a guard page, the CPU will fail
+	 * to deliver #PF and will send #DF instead.  CR2 will contain
+	 * the linear address of the second fault, which will be in the
+	 * guard page below the bottom of the stack.
+	 */
+	cr2 = read_cr2();
+	if ((unsigned long)tsk->stack - 1 - cr2 < PAGE_SIZE)
+		handle_stack_overflow(
+			"kernel stack overflow (double-fault)",
+			regs, cr2);
+#endif
 
 #ifdef CONFIG_DOUBLEFAULT
 	df_debug(regs, error_code);
