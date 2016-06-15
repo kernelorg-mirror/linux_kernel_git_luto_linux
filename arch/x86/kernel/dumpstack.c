@@ -89,7 +89,7 @@ static inline int valid_stack_ptr(struct thread_info *tinfo,
 		else
 			return 0;
 	}
-	return p > t && p < t + THREAD_SIZE - size;
+	return p >= t && p < t + THREAD_SIZE - size;
 }
 
 unsigned long
@@ -99,6 +99,13 @@ print_context_stack(struct thread_info *tinfo,
 		unsigned long *end, int *graph)
 {
 	struct stack_frame *frame = (struct stack_frame *)bp;
+
+	/*
+	 * If we overflowed the stack into a guard page, jump back to the
+	 * bottom of the usable stack.
+	 */
+	if ((unsigned long)tinfo - (unsigned long)stack < PAGE_SIZE)
+		stack = (unsigned long *)tinfo;
 
 	while (valid_stack_ptr(tinfo, stack, sizeof(*stack), end)) {
 		unsigned long addr;
