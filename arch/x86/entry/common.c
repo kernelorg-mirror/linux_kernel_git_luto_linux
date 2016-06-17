@@ -271,7 +271,7 @@ __visible inline void prepare_exit_to_usermode(struct pt_regs *regs)
 	 * syscalls.  The fixup is exercised by the ptrace_syscall_32
 	 * selftest.
 	 */
-	ti->status &= ~TS_COMPAT;
+	current->thread.status &= ~TS_COMPAT;
 #endif
 
 	user_enter();
@@ -369,7 +369,7 @@ static __always_inline void do_syscall_32_irqs_on(struct pt_regs *regs)
 	unsigned int nr = (unsigned int)regs->orig_ax;
 
 #ifdef CONFIG_IA32_EMULATION
-	ti->status |= TS_COMPAT;
+	current->thread.status |= TS_COMPAT;
 #endif
 
 	if (READ_ONCE(ti->flags) & _TIF_WORK_SYSCALL_ENTRY) {

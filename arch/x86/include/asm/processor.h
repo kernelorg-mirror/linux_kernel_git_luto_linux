@@ -388,6 +388,9 @@ struct thread_struct {
 	unsigned short		fsindex;
 	unsigned short		gsindex;
 #endif
+
+	u32			status;		/* thread synchronous flags */
+
 #ifdef CONFIG_X86_32
 	unsigned long		ip;
 #endif
@@ -435,6 +438,15 @@ struct thread_struct {
 	 * the end.
 	 */
 };
+
+/*
+ * Thread-synchronous status.
+ *
+ * This is different from the flags in that nobody else
+ * ever touches our thread-synchronous status, so we don't
+ * have to worry about atomic accesses.
+ */
+#define TS_COMPAT		0x0002	/* 32bit syscall active (64BIT)*/
 
 /*
  * Set IOPL bits in EFLAGS from given mask
