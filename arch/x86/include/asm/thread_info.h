@@ -55,14 +55,12 @@ struct task_struct;
 struct thread_info {
 	struct task_struct	*task;		/* main task structure */
 	__u32			flags;		/* low level flags */
-	__u32			cpu;		/* current CPU */
 };
 
 #define INIT_THREAD_INFO(tsk)			\
 {						\
 	.task		= &tsk,			\
 	.flags		= 0,			\
-	.cpu		= 0,			\
 }
 
 #define init_thread_info	(init_thread_union.thread_info)
