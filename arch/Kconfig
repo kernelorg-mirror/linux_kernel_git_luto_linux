@@ -687,4 +687,11 @@ config VMAP_STACK
 	  caught immediately rather than causing difficult-to-diagnose
 	  corruption.
 
+config ARCH_THREAD_INFO_NO_CPU
+	def_bool n
+	---help---
+	  Select this if your struct thread_info does not contain a
+	  member called 'cpu'.  Hopefully some day all arches will select
+	  this and then we can remove the option.
+
 source "kernel/gcov/Kconfig"
