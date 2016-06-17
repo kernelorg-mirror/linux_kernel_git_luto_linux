@@ -115,12 +115,12 @@ void irq_ctx_init(int cpu)
 		return;
 
 	irqstk = page_address(alloc_pages_node(cpu_to_node(cpu),
-					       THREADINFO_GFP,
+					       THREADSTACK_GFP,
 					       THREAD_SIZE_ORDER));
 	per_cpu(hardirq_stack, cpu) = irqstk;
 
 	irqstk = page_address(alloc_pages_node(cpu_to_node(cpu),
-					       THREADINFO_GFP,
+					       THREADSTACK_GFP,
 					       THREAD_SIZE_ORDER));
 	per_cpu(softirq_stack, cpu) = irqstk;
 
