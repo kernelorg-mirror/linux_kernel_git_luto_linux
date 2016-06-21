@@ -364,7 +364,7 @@ static int smp_h6(struct crypto_shash *tfm_cmac, const u8 w[16],
 static int smp_e(struct crypto_skcipher *tfm, const u8 *k, u8 *r)
 {
 	SKCIPHER_REQUEST_ON_STACK(req, tfm);
-	struct scatterlist sg;
+	struct stack_scatterlist ssg;
 	uint8_t tmp[16], data[16];
 	int err;
 
@@ -387,11 +387,11 @@ static int smp_e(struct crypto_skcipher *tfm, const u8 *k, u8 *r)
 	/* Most significant octet of plaintextData corresponds to data[0] */
 	swap_buf(r, data, 16);
 
-	sg_init_one(&sg, data, 16);
+	sg_init_stackbuf(&ssg, data, 16);
 
 	skcipher_request_set_tfm(req, tfm);
 	skcipher_request_set_callback(req, 0, NULL, NULL);
-	skcipher_request_set_crypt(req, &sg, &sg, 16, NULL);
+	skcipher_request_set_crypt(req, ssg.sg, ssg.sg, 16, NULL);
 
 	err = crypto_skcipher_encrypt(req);
 	skcipher_request_zero(req);
