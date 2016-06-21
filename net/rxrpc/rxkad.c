@@ -105,7 +105,7 @@ static void rxkad_prime_packet_security(struct rxrpc_connection *conn)
 {
 	struct rxrpc_key_token *token;
 	SKCIPHER_REQUEST_ON_STACK(req, conn->cipher);
-	struct scatterlist sg[2];
+	struct stack_scatterlist ssg[2];
 	struct rxrpc_crypt iv;
 	struct {
 		__be32 x[4];
@@ -124,12 +124,13 @@ static void rxkad_prime_packet_security(struct rxrpc_connection *conn)
 	tmpbuf.x[2] = 0;
 	tmpbuf.x[3] = htonl(conn->security_ix);
 
-	sg_init_one(&sg[0], &tmpbuf, sizeof(tmpbuf));
-	sg_init_one(&sg[1], &tmpbuf, sizeof(tmpbuf));
+	sg_init_stackbuf(&ssg[0], &tmpbuf, sizeof(tmpbuf));
+	sg_init_stackbuf(&ssg[1], &tmpbuf, sizeof(tmpbuf));
 
 	skcipher_request_set_tfm(req, conn->cipher);
 	skcipher_request_set_callback(req, 0, NULL, NULL);
-	skcipher_request_set_crypt(req, &sg[1], &sg[0], sizeof(tmpbuf), iv.x);
+	skcipher_request_set_crypt(req, ssg[1].sg, ssg[0].sg, sizeof(tmpbuf),
+				   iv.x);
 
 	crypto_skcipher_encrypt(req);
 	skcipher_request_zero(req);
@@ -151,7 +152,7 @@ static int rxkad_secure_packet_auth(const struct rxrpc_call *call,
 	struct rxrpc_skb_priv *sp;
 	SKCIPHER_REQUEST_ON_STACK(req, call->conn->cipher);
 	struct rxrpc_crypt iv;
-	struct scatterlist sg[2];
+	struct stack_scatterlist ssg[2];
 	struct {
 		struct rxkad_level1_hdr hdr;
 		__be32	first;	/* first four bytes of data and padding */
@@ -171,12 +172,13 @@ static int rxkad_secure_packet_auth(const struct rxrpc_call *call,
 	/* start the encryption afresh */
 	memset(&iv, 0, sizeof(iv));
 
-	sg_init_one(&sg[0], &tmpbuf, sizeof(tmpbuf));
-	sg_init_one(&sg[1], &tmpbuf, sizeof(tmpbuf));
+	sg_init_stackbuf(&ssg[0], &tmpbuf, sizeof(tmpbuf));
+	sg_init_stackbuf(&ssg[1], &tmpbuf, sizeof(tmpbuf));
 
 	skcipher_request_set_tfm(req, call->conn->cipher);
 	skcipher_request_set_callback(req, 0, NULL, NULL);
-	skcipher_request_set_crypt(req, &sg[1], &sg[0], sizeof(tmpbuf), iv.x);
+	skcipher_request_set_crypt(req, ssg[1].sg, ssg[0].sg, sizeof(tmpbuf),
+				   iv.x);
 
 	crypto_skcipher_encrypt(req);
 	skcipher_request_zero(req);
@@ -201,6 +203,7 @@ static int rxkad_secure_packet_encrypt(const struct rxrpc_call *call,
 	struct rxrpc_skb_priv *sp;
 	SKCIPHER_REQUEST_ON_STACK(req, call->conn->cipher);
 	struct rxrpc_crypt iv;
+	struct stack_scatterlist ssg[2];
 	struct scatterlist sg[16];
 	struct sk_buff *trailer;
 	unsigned int len;
@@ -221,12 +224,13 @@ static int rxkad_secure_packet_encrypt(const struct rxrpc_call *call,
 	token = call->conn->key->payload.data[0];
 	memcpy(&iv, token->kad->session_key, sizeof(iv));
 
-	sg_init_one(&sg[0], sechdr, sizeof(rxkhdr));
-	sg_init_one(&sg[1], &rxkhdr, sizeof(rxkhdr));
+	sg_init_stackbuf(&ssg[0], sechdr, sizeof(rxkhdr));
+	sg_init_stackbuf(&ssg[1], &rxkhdr, sizeof(rxkhdr));
 
 	skcipher_request_set_tfm(req, call->conn->cipher);
 	skcipher_request_set_callback(req, 0, NULL, NULL);
-	skcipher_request_set_crypt(req, &sg[1], &sg[0], sizeof(rxkhdr), iv.x);
+	skcipher_request_set_crypt(req, ssg[1].sg, ssg[0].sg, sizeof(rxkhdr),
+				   iv.x);
 
 	crypto_skcipher_encrypt(req);
 
@@ -265,7 +269,7 @@ static int rxkad_secure_packet(const struct rxrpc_call *call,
 	struct rxrpc_skb_priv *sp;
 	SKCIPHER_REQUEST_ON_STACK(req, call->conn->cipher);
 	struct rxrpc_crypt iv;
-	struct scatterlist sg[2];
+	struct stack_scatterlist ssg[2];
 	struct {
 		__be32 x[2];
 	} tmpbuf __attribute__((aligned(8))); /* must all be in same page */
@@ -294,12 +298,13 @@ static int rxkad_secure_packet(const struct rxrpc_call *call,
 	tmpbuf.x[0] = htonl(sp->hdr.callNumber);
 	tmpbuf.x[1] = htonl(x);
 
-	sg_init_one(&sg[0], &tmpbuf, sizeof(tmpbuf));
-	sg_init_one(&sg[1], &tmpbuf, sizeof(tmpbuf));
+	sg_init_stackbuf(&ssg[0], &tmpbuf, sizeof(tmpbuf));
+	sg_init_stackbuf(&ssg[1], &tmpbuf, sizeof(tmpbuf));
 
 	skcipher_request_set_tfm(req, call->conn->cipher);
 	skcipher_request_set_callback(req, 0, NULL, NULL);
-	skcipher_request_set_crypt(req, &sg[1], &sg[0], sizeof(tmpbuf), iv.x);
+	skcipher_request_set_crypt(req, ssg[1].sg, ssg[0].sg, sizeof(tmpbuf),
+				   iv.x);
 
 	crypto_skcipher_encrypt(req);
 	skcipher_request_zero(req);
@@ -503,7 +508,7 @@ static int rxkad_verify_packet(const struct rxrpc_call *call,
 	SKCIPHER_REQUEST_ON_STACK(req, call->conn->cipher);
 	struct rxrpc_skb_priv *sp;
 	struct rxrpc_crypt iv;
-	struct scatterlist sg[2];
+	struct stack_scatterlist ssg[2];
 	struct {
 		__be32 x[2];
 	} tmpbuf __attribute__((aligned(8))); /* must all be in same page */
@@ -534,12 +539,12 @@ static int rxkad_verify_packet(const struct rxrpc_call *call,
 	tmpbuf.x[0] = htonl(call->call_id);
 	tmpbuf.x[1] = htonl(x);
 
-	sg_init_one(&sg[0], &tmpbuf, sizeof(tmpbuf));
-	sg_init_one(&sg[1], &tmpbuf, sizeof(tmpbuf));
+	sg_init_stackbuf(&ssg[0], &tmpbuf, sizeof(tmpbuf));
+	sg_init_stackbuf(&ssg[1], &tmpbuf, sizeof(tmpbuf));
 
 	skcipher_request_set_tfm(req, call->conn->cipher);
 	skcipher_request_set_callback(req, 0, NULL, NULL);
-	skcipher_request_set_crypt(req, &sg[1], &sg[0], sizeof(tmpbuf), iv.x);
+	skcipher_request_set_crypt(req, ssg[1].sg, ssg[0].sg, sizeof(tmpbuf), iv.x);
 
 	crypto_skcipher_encrypt(req);
 	skcipher_request_zero(req);
