@@ -1361,6 +1361,16 @@ struct nvme_core_quirk_entry {
 };
 
 static const struct nvme_core_quirk_entry core_quirks[] = {
+	/*
+	 * Seen on a Samsung "SM951 NVMe SAMSUNG 256GB": using APST causes
+	 * the controller to go out to lunch.  It dies when the watchdog
+	 * timer reads CSTS and gets 0xffffffff.
+	 */
+	{
+		.vid = 0x144d,
+		.fr = "BXW75D0Q",
+		.quirks = NVME_QUIRK_NO_APST,
+	},
 };
 
 /* match is null-terminated but idstr is space-padded. */
@@ -1470,7 +1480,7 @@ int nvme_init_identify(struct nvme_ctrl *ctrl)
 
 	ctrl->npss = id->npss;
 	prev_apsta = ctrl->apsta;
-	ctrl->apsta = id->apsta;
+	ctrl->apsta = (ctrl->quirks & NVME_QUIRK_NO_APST) ? 0 : id->apsta;
 	memcpy(ctrl->psd, id->psd, sizeof(ctrl->psd));
 
 	if (ctrl->ops->is_fabrics) {
