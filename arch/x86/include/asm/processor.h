@@ -90,8 +90,6 @@ struct cpuinfo_x86 {
 	__u8			x86_model;
 	__u8			x86_mask;
 #ifdef CONFIG_X86_32
-	char			wp_works_ok;	/* It doesn't on 386's */
-
 	/* Problems on some 486Dx4's and old 386's: */
 	char			rfu;
 	char			pad0;
