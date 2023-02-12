@@ -608,9 +608,14 @@ static int get_reg_offset_16(struct insn *insn, struct pt_regs *regs,
  * get_desc() - Obtain contents of a segment descriptor
  * @out:	Segment descriptor contents on success
  * @sel:	Segment selector
+ * @user_mode:	Does the look up originate from user code
  *
  * Given a segment selector, obtain a pointer to the segment descriptor.
  * Both global and local descriptor tables are supported.
+ *
+ * WARNING: This function (as should be obvious from its signature) gets
+ * the segment for the current task.  Hopefully all callers want that
+ * behavior.
  *
  * Returns:
  *
@@ -618,17 +623,22 @@ static int get_reg_offset_16(struct insn *insn, struct pt_regs *regs,
  *
  * NULL on error.
  */
-static bool get_desc(struct desc_struct *out, unsigned short sel)
+static bool get_desc(struct desc_struct *out, unsigned short sel, bool user_mode)
 {
 	struct desc_ptr gdt_desc = {0, 0};
 	unsigned long desc_base;
+	struct desc_struct *desc;
 
 #ifdef CONFIG_MODIFY_LDT_SYSCALL
 	if ((sel & SEGMENT_TI_MASK) == SEGMENT_LDT) {
 		bool success = false;
 		struct ldt_struct *ldt;
 
-		/* Bits [15:3] contain the index of the desired entry. */
+		/*
+		 * Bits [15:3] contain the index of the desired entry.
+		 * No need to check permissions -- LDT segments are always
+		 * DPL 3 if they're non-NULL.
+		 */
 		sel >>= 3;
 
 		mutex_lock(&current->active_mm->context.lock);
@@ -657,7 +667,27 @@ static bool get_desc(struct desc_struct *out, unsigned short sel)
 	if (desc_base > gdt_desc.size)
 		return false;
 
-	*out = *(struct desc_struct *)(gdt_desc.address + desc_base);
+	desc = (struct desc_struct *)(gdt_desc.address + desc_base);
+	if (user_mode || (sel & SEGMENT_RPL_MASK) != 0) {
+		/*
+		 * This is a non-privileged (CPL != 0 or RPL != 0) lookup.  It
+		 * should be impossible to end up with RPL > DPL for a
+		 * selector that's in a segment register, so just checking
+		 * user_mode above should be sufficient, but it's easy to
+		 * verify RPL as well.
+		 */
+		if (desc->dpl != 3)
+			return false;
+	}
+
+	/*
+	 * Technically we should also check the segment type, but Linux only
+	 * allows DPL==3 code and data segments, and we should only ever decode
+	 * kernel instructions with sensible selectors in pt_regs, so we should
+	 * be safe without any type verification.
+	 */
+
+	*out = *desc;
 	return true;
 }
 
@@ -722,7 +752,7 @@ unsigned long insn_get_seg_base(struct pt_regs *regs, int seg_reg_idx)
 	if (!sel)
 		return -1L;
 
-	if (!get_desc(&desc, sel))
+	if (!get_desc(&desc, sel, user_mode(regs)))
 		return -1L;
 
 	return get_desc_base(&desc);
@@ -761,7 +791,7 @@ static unsigned long get_seg_limit(struct pt_regs *regs, int seg_reg_idx)
 	if (!sel)
 		return 0;
 
-	if (!get_desc(&desc, sel))
+	if (!get_desc(&desc, sel, user_mode(regs)))
 		return 0;
 
 	/*
@@ -806,7 +836,7 @@ int insn_get_code_seg_params(struct pt_regs *regs)
 	if (sel < 0)
 		return sel;
 
-	if (!get_desc(&desc, sel))
+	if (!get_desc(&desc, sel, user_mode(regs)))
 		return -EINVAL;
 
 	/*
