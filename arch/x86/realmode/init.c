@@ -59,12 +59,6 @@ void __init reserve_real_mode(void)
 		pr_info("No sub-1M memory is available for the trampoline\n");
 	else
 		set_real_mode_mem(mem);
-
-	/*
-	 * Unconditionally reserve the entire fisrt 1M, see comment in
-	 * setup_arch().
-	 */
-	memblock_reserve(0, SZ_1M);
 }
 
 static void __init sme_sev_setup_real_mode(struct trampoline_header *th)

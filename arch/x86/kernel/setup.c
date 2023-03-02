@@ -1168,7 +1168,10 @@ void __init setup_arch(char **cmdline_p)
 
 	/*
 	 * Find free memory for the real mode trampoline and place it there.
-	 *
+	 */
+	x86_platform.realmode_reserve();
+
+	/*
 	 * Unconditionally reserve the entire first 1M of RAM because BIOSes
 	 * are known to corrupt low memory and several hundred kilobytes are not
 	 * worth complex detection what memory gets clobbered. Windows does the
@@ -1179,7 +1182,8 @@ void __init setup_arch(char **cmdline_p)
 	 * Moreover, on machines with SandyBridge graphics,the entire 1M must be
 	 * reserved anyway.
 	 */
-	x86_platform.realmode_reserve();
+
+	memblock_reserve(0, SZ_1M);
 
 	init_mem_mapping();
 
