@@ -452,9 +452,9 @@ void __init efi_free_boot_services(void)
 		}
 
 		/*
-		 * Don't free memory under 1M for two reasons:
-		 * - BIOS might clobber it
-		 * - Crash kernel needs it to be reserved
+		 * Don't free memory under 1M -- see comments in
+		 * arch/x86/kernel/setup.c and the code that reserves the
+		 * entire first megabyte.
 		 */
 		if (start + size < SZ_1M)
 			continue;

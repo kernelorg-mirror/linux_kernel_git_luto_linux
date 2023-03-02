@@ -719,8 +719,9 @@ static void __init trim_snb_memory(void)
 	 *
 	 * To avoid these pages being ever accessed by SNB gfx devices reserve
 	 * bad_pages that have not already been reserved at boot time.
-	 * All memory below the 1 MB mark is anyway reserved later during
-	 * setup_arch(), so there is no need to reserve it here.
+	 * All memory below the 1 MB mark is reserved on all systems (except for
+	 * certain kernel functionality like the realmode trampoline),
+	 * but those uses will never interact with the gfx chip.
 	 */
 
 	for (i = 0; i < ARRAY_SIZE(bad_pages); i++) {
@@ -802,8 +803,21 @@ static void __init early_reserve_memory(void)
 
 	memblock_x86_reserve_range_setup_data();
 
+	/*
+	 * Locate the iSCSI IBFT.  (There is no obvious documentation as to why this
+	 * needs to be done so early.)
+	 */
 	reserve_ibft_region();
+
+	/*
+	 * Mark the EBDA reserved.  The EBDA is generally not enumerated in e820 or
+	 * the EFI memmap, but we nevertheless must not use it.
+	 */
 	reserve_bios_regions();
+
+	/*
+	 * Reserve certain high pages that SNB gfx has trouble with.
+	 */
 	trim_snb_memory();
 }
 
@@ -1153,18 +1167,17 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	/*
-	 * Find free memory for the real mode trampoline and place it there. If
-	 * there is not enough free memory under 1M, on EFI-enabled systems
-	 * there will be additional attempt to reclaim the memory for the real
-	 * mode trampoline at efi_free_boot_services().
+	 * Find free memory for the real mode trampoline and place it there.
 	 *
 	 * Unconditionally reserve the entire first 1M of RAM because BIOSes
 	 * are known to corrupt low memory and several hundred kilobytes are not
 	 * worth complex detection what memory gets clobbered. Windows does the
-	 * same thing for very similar reasons.
+	 * same thing for very similar reasons.  If BIOS corrupts the realmode
+	 * trampoline, there's not a lot we can do about it -- x86's SIPI
+	 * fundamentally requires a trampoline below 1MB.
 	 *
-	 * Moreover, on machines with SandyBridge graphics or in setups that use
-	 * crashkernel the entire 1M is reserved anyway.
+	 * Moreover, on machines with SandyBridge graphics,the entire 1M must be
+	 * reserved anyway.
 	 */
 	x86_platform.realmode_reserve();
 
