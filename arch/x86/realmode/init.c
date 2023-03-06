@@ -66,6 +66,8 @@ void __init reserve_real_mode(void)
 		set_real_mode_mem(mem);
 		pr_info("real mode trampoline is 0x%lx bytes at 0x%lx\n",
 			(unsigned long)size, (unsigned long)mem);
+		if (mem < 65536)
+			pr_warn("real mode trampoline is below 64kB -- some BIOSes may corrupt it\n");
 	}
 }
 

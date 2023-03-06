@@ -788,16 +788,18 @@ static void __init early_reserve_memory(void)
 
 	/*
 	 * The first 4Kb of memory is a BIOS owned area, but generally it is
-	 * not listed as such in the E820 table.
+	 * not listed as such in the E820 table.  Additionally, page 0 could
+	 * be leaked to user processes on systems with the L1TF vulnerability.
 	 *
-	 * Reserve the first 64K of memory since some BIOSes are known to
-	 * corrupt low memory. After the real mode trampoline is allocated the
-	 * rest of the memory below 640k is reserved.
-	 *
-	 * In addition, make sure page 0 is always reserved because on
-	 * systems with L1TF its contents can be leaked to user processes.
+	 * There are some BIOSes that corrupt the low 64K of memory, and there
+	 * are supposedly some BIOSes that may corrupt low memory even above
+	 * 64K.  To minimize use of risky low memory, we will only allow
+	 * absolutely critical allocations (the real mode trampoline) below
+	 * 1MB, those will be done in to-down mode.  Since it's better to boot
+	 * with an allocation below 64kB than to panic, we will allow
+	 * allocations below 64kB.
 	 */
-	memblock_reserve(0, SZ_64K);
+	memblock_reserve(0, 4096);
 
 	early_reserve_initrd();
 
