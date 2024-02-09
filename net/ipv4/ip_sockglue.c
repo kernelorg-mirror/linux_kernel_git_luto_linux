@@ -926,6 +926,7 @@ int do_ip_setsockopt(struct sock *sk, int level, int optname,
 	case IP_RECVFRAGSIZE:
 	case IP_RECVERR_RFC4884:
 	case IP_LOCAL_PORT_RANGE:
+	case IP_RECVERR_QUIET:
 		if (optlen >= sizeof(int)) {
 			if (copy_from_sockptr(&val, optval, sizeof(val)))
 				return -EFAULT;
@@ -982,6 +983,11 @@ int do_ip_setsockopt(struct sock *sk, int level, int optname,
 		if (val < 0 || val > 1)
 			return -EINVAL;
 		inet_assign_bit(RECVERR_RFC4884, sk, val);
+		return 0;
+	case IP_RECVERR_QUIET:
+		if (val < 0 || val > 1)
+			return -EINVAL;
+		inet_assign_bit(RECVERR_QUIET, sk, val);
 		return 0;
 	case IP_FREEBIND:
 		if (optlen < 1)
@@ -1559,6 +1565,9 @@ int do_ip_getsockopt(struct sock *sk, int level, int optname,
 		goto copyval;
 	case IP_RECVERR_RFC4884:
 		val = inet_test_bit(RECVERR_RFC4884, sk);
+		goto copyval;
+	case IP_RECVERR_QUIET:
+		val = inet_test_bit(RECVERR_QUIET, sk);
 		goto copyval;
 	case IP_FREEBIND:
 		val = inet_test_bit(FREEBIND, sk);
