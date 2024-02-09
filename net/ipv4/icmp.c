@@ -116,67 +116,67 @@ struct icmp_bxm {
 const struct icmp_err icmp_err_convert[] = {
 	{
 		.errno = ENETUNREACH,	/* ICMP_NET_UNREACH */
-		.fatal = 0,
+		.fatal = false,
 	},
 	{
 		.errno = EHOSTUNREACH,	/* ICMP_HOST_UNREACH */
-		.fatal = 0,
+		.fatal = false,
 	},
 	{
 		.errno = ENOPROTOOPT	/* ICMP_PROT_UNREACH */,
-		.fatal = 1,
+		.fatal = true,
 	},
 	{
 		.errno = ECONNREFUSED,	/* ICMP_PORT_UNREACH */
-		.fatal = 1,
+		.fatal = true,
 	},
 	{
 		.errno = EMSGSIZE,	/* ICMP_FRAG_NEEDED */
-		.fatal = 0,
+		.fatal = false,
 	},
 	{
 		.errno = EOPNOTSUPP,	/* ICMP_SR_FAILED */
-		.fatal = 0,
+		.fatal = false,
 	},
 	{
 		.errno = ENETUNREACH,	/* ICMP_NET_UNKNOWN */
-		.fatal = 1,
+		.fatal = true,
 	},
 	{
 		.errno = EHOSTDOWN,	/* ICMP_HOST_UNKNOWN */
-		.fatal = 1,
+		.fatal = true,
 	},
 	{
 		.errno = ENONET,	/* ICMP_HOST_ISOLATED */
-		.fatal = 1,
+		.fatal = true,
 	},
 	{
 		.errno = ENETUNREACH,	/* ICMP_NET_ANO	*/
-		.fatal = 1,
+		.fatal = true,
 	},
 	{
 		.errno = EHOSTUNREACH,	/* ICMP_HOST_ANO */
-		.fatal = 1,
+		.fatal = true,
 	},
 	{
 		.errno = ENETUNREACH,	/* ICMP_NET_UNR_TOS */
-		.fatal = 0,
+		.fatal = false,
 	},
 	{
 		.errno = EHOSTUNREACH,	/* ICMP_HOST_UNR_TOS */
-		.fatal = 0,
+		.fatal = false,
 	},
 	{
 		.errno = EHOSTUNREACH,	/* ICMP_PKT_FILTERED */
-		.fatal = 1,
+		.fatal = true,
 	},
 	{
 		.errno = EHOSTUNREACH,	/* ICMP_PREC_VIOLATION */
-		.fatal = 1,
+		.fatal = true,
 	},
 	{
 		.errno = EHOSTUNREACH,	/* ICMP_PREC_CUTOFF */
-		.fatal = 1,
+		.fatal = true,
 	},
 };
 EXPORT_SYMBOL(icmp_err_convert);

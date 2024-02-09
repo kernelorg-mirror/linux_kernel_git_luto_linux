@@ -495,7 +495,7 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 	int code;
 	struct net *net = dev_net(skb->dev);
 	struct sock *sk;
-	int harderr;
+	bool harderr, recverr;
 	int err;
 
 	if (skb->protocol == htons(ETH_P_IP)) {
@@ -529,7 +529,7 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 	pr_debug("err on socket %p\n", sk);
 
 	err = 0;
-	harderr = 0;
+	harderr = false;
 	inet_sock = inet_sk(sk);
 
 	if (skb->protocol == htons(ETH_P_IP)) {
@@ -546,14 +546,14 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 			break;
 		case ICMP_PARAMETERPROB:
 			err = EPROTO;
-			harderr = 1;
+			harderr = true;
 			break;
 		case ICMP_DEST_UNREACH:
 			if (code == ICMP_FRAG_NEEDED) { /* Path MTU discovery */
 				ipv4_sk_update_pmtu(skb, sk, info);
 				if (READ_ONCE(inet_sock->pmtudisc) != IP_PMTUDISC_DONT) {
 					err = EMSGSIZE;
-					harderr = 1;
+					harderr = true;
 					break;
 				}
 				goto out;
@@ -580,11 +580,9 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 	 *      RFC1122: OK.  Passes ICMP errors back to application, as per
 	 *	4.1.3.3.
 	 */
-	if ((family == AF_INET && !inet_test_bit(RECVERR, sk)) ||
-	    (family == AF_INET6 && !inet6_test_bit(RECVERR6, sk))) {
-		if (!harderr || sk->sk_state != TCP_ESTABLISHED)
-			goto out;
-	} else {
+	bool recverr = (family == AF_INET && inet_test_bit(RECVERR, sk)) ||
+		       (family == AF_INET6 && inet6_test_bit(RECVERR6, sk));
+	if (recverr) {
 		if (family == AF_INET) {
 			ip_icmp_error(sk, skb, err, 0 /* no remote port */,
 				      info, (u8 *)icmph);
@@ -595,8 +593,8 @@ void ping_err(struct sk_buff *skb, int offset, u32 info)
 #endif
 		}
 	}
-	sk->sk_err = err;
-	sk_error_report(sk);
+
+	ip_error_report(sk, err, harderr, recverr);
 out:
 	return;
 }

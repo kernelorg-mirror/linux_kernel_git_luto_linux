@@ -706,7 +706,7 @@ int __udp4_lib_err(struct sk_buff *skb, u32 info, struct udp_table *udptable)
 	const int code = icmp_hdr(skb)->code;
 	bool tunnel = false;
 	struct sock *sk;
-	int harderr;
+	bool harderr, recverr;
 	int err;
 	struct net *net = dev_net(skb->dev);
 
@@ -733,7 +733,7 @@ int __udp4_lib_err(struct sk_buff *skb, u32 info, struct udp_table *udptable)
 	}
 
 	err = 0;
-	harderr = 0;
+	harderr = false;
 	inet = inet_sk(sk);
 
 	switch (type) {
@@ -745,14 +745,14 @@ int __udp4_lib_err(struct sk_buff *skb, u32 info, struct udp_table *udptable)
 		goto out;
 	case ICMP_PARAMETERPROB:
 		err = EPROTO;
-		harderr = 1;
+		harderr = true;
 		break;
 	case ICMP_DEST_UNREACH:
 		if (code == ICMP_FRAG_NEEDED) { /* Path MTU discovery */
 			ipv4_sk_update_pmtu(skb, sk, info);
 			if (READ_ONCE(inet->pmtudisc) != IP_PMTUDISC_DONT) {
 				err = EMSGSIZE;
-				harderr = 1;
+				harderr = true;
 				break;
 			}
 			goto out;
@@ -779,14 +779,12 @@ int __udp4_lib_err(struct sk_buff *skb, u32 info, struct udp_table *udptable)
 						  (u8 *)(uh+1));
 		goto out;
 	}
-	if (!inet_test_bit(RECVERR, sk)) {
-		if (!harderr || sk->sk_state != TCP_ESTABLISHED)
-			goto out;
-	} else
-		ip_icmp_error(sk, skb, err, uh->dest, info, (u8 *)(uh+1));
 
-	sk->sk_err = err;
-	sk_error_report(sk);
+	recverr = inet_test_bit(RECVERR, sk);
+	if (recverr)
+		ip_icmp_error(sk, skb, err, uh->dest, info, (u8 *)(uh+1));
+	ip_error_report(sk, err, harderr, recverr);
+
 out:
 	return 0;
 }

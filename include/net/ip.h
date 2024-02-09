@@ -812,4 +812,33 @@ void ip_sock_set_recverr(struct sock *sk);
 void ip_sock_set_tos(struct sock *sk, int val);
 void  __ip_sock_set_tos(struct sock *sk, int val);
 
+/*
+ * When an ICMP error is received that matches a datagram socket, some combination of
+ * queueing an IP_RECVERR-style message, setting sk_err, and signaling POLLERR needs
+ * to happen.
+ *
+ * Use like this:
+ *
+ * bool recverr = inet_test_bit(RECVERR, sk) [and account for ipv6]
+ * int err = ...;
+ * bool harderr;  <- true if the error is 'hard', meaning that it should be reported
+ *                   for !RECVERR connected sockets
+ * if (recverr)
+ * 	ip_icmp_error() or ipv6_icmp_error() as appropriate.
+ * ip_error_report(sk, err, harderr, recverr);
+ */
+static inline bool ip_error_report(struct socket *sk, int err, bool harderr, bool recverr)
+{
+	/*
+	 * Linux sets sk_err for connected sockets if the error is 'hard' (which makes
+	 * perfect sense) and for all sockets if RECVERR[6] (which does not make very
+	 * much sense).  It does indeed make sense that sk_error_report(), which signals
+	 * POLLERR, is called if RECVERR[6], though.
+	 */
+	if ((harderr && sk->sk_state == TCP_ESTABLISHED) || recverr) {
+		sk->sk_err = err;
+		sk_error_report(sk);
+	}
+}
+
 #endif	/* _IP_H */
